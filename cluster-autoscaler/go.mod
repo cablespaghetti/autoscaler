@@ -16,6 +16,7 @@ require (
 	github.com/Azure/go-autorest/autorest/date v0.3.0
 	github.com/Azure/go-autorest/autorest/to v0.2.0
 	github.com/aws/aws-sdk-go v1.28.2
+	github.com/civo/civogo v0.2.5
 	github.com/digitalocean/godo v1.27.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/mock v1.3.1
@@ -402,6 +403,8 @@ replace (
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.0.1
 	sigs.k8s.io/yaml => sigs.k8s.io/yaml v1.2.0
 )
+
+replace github.com/civo/civogo => github.com/civo/civogo v0.2.5
 
 replace github.com/digitalocean/godo => github.com/digitalocean/godo v1.27.0
 
