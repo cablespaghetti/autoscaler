@@ -14,6 +14,7 @@ require (
 	github.com/Azure/go-autorest/autorest/date v0.2.0
 	github.com/Azure/go-autorest/autorest/to v0.2.0
 	github.com/aws/aws-sdk-go v1.28.2
+	github.com/civo/civogo v0.2.5
 	github.com/digitalocean/godo v1.27.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
@@ -452,6 +453,8 @@ replace (
 	sourcegraph.com/sqs/pbtypes => sourcegraph.com/sqs/pbtypes v0.0.0-20180604144634-d3ebe8f20ae4
 	vbom.ml/util => vbom.ml/util v0.0.0-20160121211510-db5cfe13f5cc
 )
+
+replace github.com/civo/civogo => github.com/civo/civogo v0.2.5
 
 replace github.com/digitalocean/godo => github.com/digitalocean/godo v1.27.0
 
