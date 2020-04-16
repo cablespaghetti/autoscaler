@@ -116,7 +116,7 @@ func (m *Manager) Refresh() error {
 		return err
 	}
 
-	klog.V(4).Infof("adding node pool: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, 1, 10)
+	klog.V(4).Infof("adding kubernetes cluster: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, m.minNodes, m.maxNodes)
 	var group []*NodeGroup
 	group = append(group, &NodeGroup{
 			id:        kubernetesCluster.ID,
@@ -126,10 +126,6 @@ func (m *Manager) Refresh() error {
 			minSize:   m.minNodes,
 			maxSize:   m.maxNodes,
 		})
-
-	if len(group) == 0 {
-		klog.V(4).Info("cluster-autoscaler is disabled. no node pools are configured")
-	}
 
 	m.nodeGroups = group
 	return nil

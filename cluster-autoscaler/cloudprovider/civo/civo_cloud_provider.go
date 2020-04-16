@@ -132,7 +132,7 @@ func (d *civoCloudProvider) Refresh() error {
 	return d.manager.Refresh()
 }
 
-// BuildDigitalOcean builds the DigitalOcean cloud provider.
+// BuildCivo builds the Civo cloud provider.
 func BuildCivo(
 	opts config.AutoscalingOptions,
 	do cloudprovider.NodeGroupDiscoveryOptions,
@@ -150,15 +150,12 @@ func BuildCivo(
 
 	manager, err := newManager(configFile)
 	if err != nil {
-		klog.Fatalf("Failed to create DigitalOcean manager: %v", err)
+		klog.Fatalf("Failed to create Civo manager: %v", err)
 	}
 
-	// the cloud provider automatically uses all node pools in DigitalOcean.
-	// This means we don't use the cloudprovider.NodeGroupDiscoveryOptions
-	// flags (which can be set via '--node-group-auto-discovery' or '-nodes')
 	provider, err := newCivoCloudProvider(manager, rl)
 	if err != nil {
-		klog.Fatalf("Failed to create DigitalOcean cloud provider: %v", err)
+		klog.Fatalf("Failed to create Civo cloud provider: %v", err)
 	}
 
 	return provider
