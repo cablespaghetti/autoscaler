@@ -27,11 +27,6 @@ import (
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 )
 
-var (
-	// ErrNodePoolNotExist is return if no node pool exists for a given cluster ID
-	ErrNodePoolNotExist = errors.New("node pool does not exist")
-)
-
 // NodeGroup implements cloudprovider.NodeGroup interface. NodeGroup contains
 // configuration info and functions to control a set of nodes that have the
 // same capacity and set of labels.
@@ -40,7 +35,6 @@ type NodeGroup struct {
 	clusterID string
 	client    *civogo.Client
 	kubernetesCluster  *civogo.KubernetesCluster
-
 	minSize int
 	maxSize int
 }
@@ -175,10 +169,6 @@ func (n *NodeGroup) Nodes() ([]cloudprovider.Instance, error) {
 		return nil, errors.New("KubernetesCluster instance is not created")
 	}
 
-	//TODO(arslan): after increasing a node pool, the number of nodes is not
-	//anymore equal to the cache here. We should return a placeholder node for
-	//that. As an example PR check this out:
-	//https://github.com/kubernetes/autoscaler/pull/2235
 	return toInstances(n.kubernetesCluster.Instances), nil
 }
 
@@ -238,7 +228,7 @@ func toInstance(node civogo.KubernetesInstance) cloudprovider.Instance {
 	}
 }
 
-// toInstanceStatus converts the given *godo.KubernetesNodeStatus to a
+// toInstanceStatus converts the given civo instance status to a
 // cloudprovider.InstanceStatus
 func toInstanceStatus(nodeState string) *cloudprovider.InstanceStatus {
 	st := &cloudprovider.InstanceStatus{}
