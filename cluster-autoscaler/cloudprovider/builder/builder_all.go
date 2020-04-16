@@ -24,6 +24,7 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/aws"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/azure"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/baiducloud"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/civo"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/clusterapi"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/digitalocean"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/gce"
@@ -41,6 +42,7 @@ var AvailableCloudProviders = []string{
 	cloudprovider.BaiducloudProviderName,
 	cloudprovider.MagnumProviderName,
 	cloudprovider.DigitalOceanProviderName,
+	cloudprovider.CivoProviderName,
 	clusterapi.ProviderName,
 }
 
@@ -63,6 +65,8 @@ func buildCloudProvider(opts config.AutoscalingOptions, do cloudprovider.NodeGro
 		return digitalocean.BuildDigitalOcean(opts, do, rl)
 	case cloudprovider.MagnumProviderName:
 		return magnum.BuildMagnum(opts, do, rl)
+	case cloudprovider.CivoProviderName:
+		return civo.BuildCivo(opts, do, rl)
 	case packet.ProviderName:
 		return packet.BuildPacket(opts, do, rl)
 	case clusterapi.ProviderName:

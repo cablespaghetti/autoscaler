@@ -14,23 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package digitalocean
+package civo
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"github.com/civo/civogo"
 
-	"github.com/digitalocean/godo"
 	apiv1 "k8s.io/api/core/v1"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
-)
-
-const (
-	doksLabelNamespace = "doks.digitalocean.com"
-	nodeIDLabel        = doksLabelNamespace + "/node-id"
 )
 
 var (
@@ -44,8 +38,8 @@ var (
 type NodeGroup struct {
 	id        string
 	clusterID string
-	client    nodeGroupClient
-	nodePool  *godo.KubernetesNodePool
+	client    *civogo.Client
+	kubernetesCluster  *civogo.KubernetesCluster
 
 	minSize int
 	maxSize int
@@ -67,7 +61,7 @@ func (n *NodeGroup) MinSize() int {
 // registration or removed nodes are deleted completely). Implementation
 // required.
 func (n *NodeGroup) TargetSize() (int, error) {
-	return n.nodePool.Count, nil
+	return n.kubernetesCluster.NumTargetNode, nil
 }
 
 // IncreaseSize increases the size of the node group. To delete a node you need
@@ -78,30 +72,29 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 		return fmt.Errorf("delta must be positive, have: %d", delta)
 	}
 
-	targetSize := n.nodePool.Count + delta
+	targetSize := n.kubernetesCluster.NumTargetNode + delta
 
 	if targetSize > n.MaxSize() {
 		return fmt.Errorf("size increase is too large. current: %d desired: %d max: %d",
-			n.nodePool.Count, targetSize, n.MaxSize())
+			n.kubernetesCluster.NumTargetNode, targetSize, n.MaxSize())
 	}
 
-	req := &godo.KubernetesNodePoolUpdateRequest{
-		Count: &targetSize,
+	req := &civogo.KubernetesClusterConfig{
+		NumTargetNodes: targetSize,
 	}
 
-	ctx := context.Background()
-	updatedNodePool, _, err := n.client.UpdateNodePool(ctx, n.clusterID, n.id, req)
+	updatedKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 	if err != nil {
 		return err
 	}
 
-	if updatedNodePool.Count != targetSize {
+	if updatedKubernetesCluster.NumTargetNode != targetSize {
 		return fmt.Errorf("couldn't increase size to %d (delta: %d). Current size is: %d",
-			targetSize, delta, updatedNodePool.Count)
+			targetSize, delta, updatedKubernetesCluster.NumTargetNode)
 	}
 
 	// update internal cache
-	n.nodePool.Count = targetSize
+	n.kubernetesCluster.NumTargetNode = targetSize
 	return nil
 }
 
@@ -110,24 +103,21 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 // given node doesn't belong to this node group. This function should wait
 // until node group size is updated. Implementation required.
 func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
-	ctx := context.Background()
 	for _, node := range nodes {
-		nodeID, ok := node.Labels[nodeIDLabel]
-		if !ok {
-			// CA creates fake node objects to represent upcoming VMs that haven't
-			// registered as nodes yet. They have node.Spec.ProviderID set. Use
-			// that as nodeID.
-			nodeID = node.Spec.ProviderID
+		nodeID := node.Name
+		targetSize := n.kubernetesCluster.NumTargetNode - 1
+		req := &civogo.KubernetesClusterConfig{
+			NumTargetNodes: targetSize,
+			NodeDestroy: nodeID,
 		}
-
-		_, err := n.client.DeleteNode(ctx, n.clusterID, n.id, nodeID, nil)
+		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {
 			return fmt.Errorf("deleting node failed for cluster: %q node pool: %q node: %q: %s",
 				n.clusterID, n.id, nodeID, err)
 		}
 
 		// decrement the count by one  after a successful delete
-		n.nodePool.Count--
+		n.kubernetesCluster.NumTargetNode--
 	}
 
 	return nil
@@ -143,29 +133,27 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 		return fmt.Errorf("delta must be negative, have: %d", delta)
 	}
 
-	targetSize := n.nodePool.Count + delta
+	targetSize := n.kubernetesCluster.NumTargetNode + delta
 	if targetSize <= n.MinSize() {
 		return fmt.Errorf("size decrease is too small. current: %d desired: %d min: %d",
-			n.nodePool.Count, targetSize, n.MinSize())
+			n.kubernetesCluster.NumTargetNode, targetSize, n.MinSize())
 	}
 
-	req := &godo.KubernetesNodePoolUpdateRequest{
-		Count: &targetSize,
+	req := &civogo.KubernetesClusterConfig{
+		NumTargetNodes: targetSize,
 	}
-
-	ctx := context.Background()
-	updatedNodePool, _, err := n.client.UpdateNodePool(ctx, n.clusterID, n.id, req)
+	updateKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 	if err != nil {
 		return err
 	}
 
-	if updatedNodePool.Count != targetSize {
+	if updateKubernetesCluster.NumTargetNode != targetSize {
 		return fmt.Errorf("couldn't increase size to %d (delta: %d). Current size is: %d",
-			targetSize, delta, updatedNodePool.Count)
+			targetSize, delta, updateKubernetesCluster.NumTargetNode)
 	}
 
 	// update internal cache
-	n.nodePool.Count = targetSize
+	n.kubernetesCluster.NumTargetNode = targetSize
 	return nil
 }
 
@@ -183,15 +171,15 @@ func (n *NodeGroup) Debug() string {
 // required that Instance objects returned by this method have Id field set.
 // Other fields are optional.
 func (n *NodeGroup) Nodes() ([]cloudprovider.Instance, error) {
-	if n.nodePool == nil {
-		return nil, errors.New("node pool instance is not created")
+	if n.kubernetesCluster == nil {
+		return nil, errors.New("KubernetesCluster instance is not created")
 	}
 
 	//TODO(arslan): after increasing a node pool, the number of nodes is not
 	//anymore equal to the cache here. We should return a placeholder node for
 	//that. As an example PR check this out:
 	//https://github.com/kubernetes/autoscaler/pull/2235
-	return toInstances(n.nodePool.Nodes), nil
+	return toInstances(n.kubernetesCluster.Instances), nil
 }
 
 // TemplateNodeInfo returns a schedulernodeinfo.NodeInfo structure of an empty
@@ -209,7 +197,7 @@ func (n *NodeGroup) TemplateNodeInfo() (*schedulernodeinfo.NodeInfo, error) {
 // Allows to tell the theoretical node group from the real one. Implementation
 // required.
 func (n *NodeGroup) Exist() bool {
-	return n.nodePool != nil
+	return n.kubernetesCluster != nil
 }
 
 // Create creates the node group on the cloud provider side. Implementation
@@ -231,9 +219,9 @@ func (n *NodeGroup) Autoprovisioned() bool {
 	return false
 }
 
-// toInstances converts a slice of *godo.KubernetesNode to
+// toInstances converts a slice of civogo.KubernetesInstance to
 // cloudprovider.Instance
-func toInstances(nodes []*godo.KubernetesNode) []cloudprovider.Instance {
+func toInstances(nodes []civogo.KubernetesInstance) []cloudprovider.Instance {
 	instances := make([]cloudprovider.Instance, 0, len(nodes))
 	for _, nd := range nodes {
 		instances = append(instances, toInstance(nd))
@@ -241,36 +229,28 @@ func toInstances(nodes []*godo.KubernetesNode) []cloudprovider.Instance {
 	return instances
 }
 
-// toInstance converts the given *godo.KubernetesNode to a
+// toInstance converts the given civogo.KubernetesInstance to a
 // cloudprovider.Instance
-func toInstance(node *godo.KubernetesNode) cloudprovider.Instance {
+func toInstance(node civogo.KubernetesInstance) cloudprovider.Instance {
 	return cloudprovider.Instance{
-		Id:     toProviderID(node.DropletID),
+		Id:     node.Hostname,
 		Status: toInstanceStatus(node.Status),
 	}
 }
 
 // toInstanceStatus converts the given *godo.KubernetesNodeStatus to a
 // cloudprovider.InstanceStatus
-func toInstanceStatus(nodeState *godo.KubernetesNodeStatus) *cloudprovider.InstanceStatus {
-	if nodeState == nil {
-		return nil
-	}
-
+func toInstanceStatus(nodeState string) *cloudprovider.InstanceStatus {
 	st := &cloudprovider.InstanceStatus{}
-	switch nodeState.State {
-	case "provisioning":
+	switch nodeState {
+	case "BUILD", "BUILD_PENDING":
 		st.State = cloudprovider.InstanceCreating
-	case "running":
+	case "ACTIVE":
 		st.State = cloudprovider.InstanceRunning
-	case "draining", "deleting":
+	case "DELETING":
 		st.State = cloudprovider.InstanceDeleting
 	default:
-		st.ErrorInfo = &cloudprovider.InstanceErrorInfo{
-			ErrorClass:   cloudprovider.OtherErrorClass,
-			ErrorCode:    "no-code-digitalocean",
-			ErrorMessage: nodeState.Message,
-		}
+		return nil
 	}
 
 	return st
