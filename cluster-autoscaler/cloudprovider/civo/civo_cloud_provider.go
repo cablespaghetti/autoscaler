@@ -14,55 +14,50 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package digitalocean
+package civo
 
 import (
-	"fmt"
 	"io"
-	"os"
-	"strings"
-
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/config"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/klog"
+	"os"
 )
 
-var _ cloudprovider.CloudProvider = (*digitaloceanCloudProvider)(nil)
+var _ cloudprovider.CloudProvider = (*civoCloudProvider)(nil)
 
 const (
 	// GPULabel is the label added to nodes with GPU resource.
-	GPULabel = "cloud.digitalocean.com/gpu-node"
-
-	doProviderIDPrefix = "digitalocean://"
+    GPULabel = "civo.com/gpu-node"
 )
 
-// digitaloceanCloudProvider implements CloudProvider interface.
-type digitaloceanCloudProvider struct {
+// civoCloudProvider implements CloudProvider interface.
+type civoCloudProvider struct {
 	manager         *Manager
 	resourceLimiter *cloudprovider.ResourceLimiter
 }
 
-func newDigitalOceanCloudProvider(manager *Manager, rl *cloudprovider.ResourceLimiter) (*digitaloceanCloudProvider, error) {
+func newCivoCloudProvider(manager *Manager, rl *cloudprovider.ResourceLimiter) (*civoCloudProvider, error) {
 	if err := manager.Refresh(); err != nil {
 		return nil, err
 	}
 
-	return &digitaloceanCloudProvider{
+	return &civoCloudProvider{
 		manager:         manager,
 		resourceLimiter: rl,
 	}, nil
 }
 
 // Name returns name of the cloud provider.
-func (d *digitaloceanCloudProvider) Name() string {
-	return cloudprovider.DigitalOceanProviderName
+func (d *civoCloudProvider) Name() string {
+	return cloudprovider.CivoProviderName
 }
 
 // NodeGroups returns all node groups configured for this cloud provider.
-func (d *digitaloceanCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
+func (d *civoCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 	nodeGroups := make([]cloudprovider.NodeGroup, len(d.manager.nodeGroups))
 	for i, ng := range d.manager.nodeGroups {
 		nodeGroups[i] = ng
@@ -73,47 +68,23 @@ func (d *digitaloceanCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 // NodeGroupForNode returns the node group for the given node, nil if the node
 // should not be processed by cluster autoscaler, or non-nil error if such
 // occurred. Must be implemented.
-func (d *digitaloceanCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
-	providerID := node.Spec.ProviderID
-	nodeID := toNodeID(providerID)
-
-	klog.V(5).Infof("checking nodegroup for node ID: %q", nodeID)
-
-	// NOTE(arslan): the number of node groups per cluster is usually very
-	// small. So even though this looks like quadratic runtime, it's OK to
-	// proceed with this.
+func (d *civoCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
+	klog.V(5).Infof("checking nodegroup for node ID: %q", node.Name)
 	for _, group := range d.manager.nodeGroups {
-		klog.V(5).Infof("iterating over node group %q", group.Id())
-		nodes, err := group.Nodes()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, node := range nodes {
-			klog.V(6).Infof("checking node has: %q want: %q", node.Id, providerID)
-			// CA uses node.Spec.ProviderID when looking for (un)registered nodes,
-			// so we need to use it here too.
-			if node.Id != providerID {
-				continue
-			}
-
-			return group, nil
-		}
+		return group, nil
 	}
-
-	// there is no "ErrNotExist" error, so we have to return a nil error
 	return nil, nil
 }
 
 // Pricing returns pricing model for this cloud provider or error if not
 // available. Implementation optional.
-func (d *digitaloceanCloudProvider) Pricing() (cloudprovider.PricingModel, errors.AutoscalerError) {
+func (d *civoCloudProvider) Pricing() (cloudprovider.PricingModel, errors.AutoscalerError) {
 	return nil, cloudprovider.ErrNotImplemented
 }
 
 // GetAvailableMachineTypes get all machine types that can be requested from
 // the cloud provider. Implementation optional.
-func (d *digitaloceanCloudProvider) GetAvailableMachineTypes() ([]string, error) {
+func (d *civoCloudProvider) GetAvailableMachineTypes() ([]string, error) {
 	return []string{}, nil
 }
 
@@ -121,7 +92,7 @@ func (d *digitaloceanCloudProvider) GetAvailableMachineTypes() ([]string, error)
 // provided. The node group is not automatically created on the cloud provider
 // side. The node group is not returned by NodeGroups() until it is created.
 // Implementation optional.
-func (d *digitaloceanCloudProvider) NewNodeGroup(
+func (d *civoCloudProvider) NewNodeGroup(
 	machineType string,
 	labels map[string]string,
 	systemLabels map[string]string,
@@ -133,36 +104,36 @@ func (d *digitaloceanCloudProvider) NewNodeGroup(
 
 // GetResourceLimiter returns struct containing limits (max, min) for
 // resources (cores, memory etc.).
-func (d *digitaloceanCloudProvider) GetResourceLimiter() (*cloudprovider.ResourceLimiter, error) {
+func (d *civoCloudProvider) GetResourceLimiter() (*cloudprovider.ResourceLimiter, error) {
 	return d.resourceLimiter, nil
 }
 
 // GPULabel returns the label added to nodes with GPU resource.
-func (d *digitaloceanCloudProvider) GPULabel() string {
+func (d *civoCloudProvider) GPULabel() string {
 	return GPULabel
 }
 
 // GetAvailableGPUTypes return all available GPU types cloud provider supports.
-func (d *digitaloceanCloudProvider) GetAvailableGPUTypes() map[string]struct{} {
+func (d *civoCloudProvider) GetAvailableGPUTypes() map[string]struct{} {
 	return nil
 }
 
 // Cleanup cleans up open resources before the cloud provider is destroyed,
 // i.e. go routines etc.
-func (d *digitaloceanCloudProvider) Cleanup() error {
+func (d *civoCloudProvider) Cleanup() error {
 	return nil
 }
 
 // Refresh is called before every main loop and can be used to dynamically
 // update cloud provider state. In particular the list of node groups returned
 // by NodeGroups() can change as a result of CloudProvider.Refresh().
-func (d *digitaloceanCloudProvider) Refresh() error {
+func (d *civoCloudProvider) Refresh() error {
 	klog.V(4).Info("Refreshing node group cache")
 	return d.manager.Refresh()
 }
 
 // BuildDigitalOcean builds the DigitalOcean cloud provider.
-func BuildDigitalOcean(
+func BuildCivo(
 	opts config.AutoscalingOptions,
 	do cloudprovider.NodeGroupDiscoveryOptions,
 	rl *cloudprovider.ResourceLimiter,
@@ -185,20 +156,10 @@ func BuildDigitalOcean(
 	// the cloud provider automatically uses all node pools in DigitalOcean.
 	// This means we don't use the cloudprovider.NodeGroupDiscoveryOptions
 	// flags (which can be set via '--node-group-auto-discovery' or '-nodes')
-	provider, err := newDigitalOceanCloudProvider(manager, rl)
+	provider, err := newCivoCloudProvider(manager, rl)
 	if err != nil {
 		klog.Fatalf("Failed to create DigitalOcean cloud provider: %v", err)
 	}
 
 	return provider
-}
-
-// toProviderID returns a provider ID from the given node ID.
-func toProviderID(nodeID string) string {
-	return fmt.Sprintf("%s%s", doProviderIDPrefix, nodeID)
-}
-
-// toNodeID returns a node or droplet ID from the given provider ID.
-func toNodeID(providerID string) string {
-	return strings.TrimPrefix(providerID, doProviderIDPrefix)
 }

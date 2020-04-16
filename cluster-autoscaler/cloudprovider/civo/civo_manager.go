@@ -14,18 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package digitalocean
+package civo
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 
-	"github.com/digitalocean/godo"
-	"golang.org/x/oauth2"
+	"github.com/civo/civogo"
 	"k8s.io/klog"
 )
 
@@ -35,36 +33,37 @@ var (
 
 type nodeGroupClient interface {
 	// ListNodePools lists all the node pools found in a Kubernetes cluster.
-	ListNodePools(ctx context.Context, clusterID string, opts *godo.ListOptions) ([]*godo.KubernetesNodePool, *godo.Response, error)
+	GetKubernetesClusters(clusterID string) (*civogo.KubernetesCluster, error)
 
 	// UpdateNodePool updates the details of an existing node pool.
-	UpdateNodePool(ctx context.Context, clusterID, poolID string, req *godo.KubernetesNodePoolUpdateRequest) (*godo.KubernetesNodePool, *godo.Response, error)
-
-	// DeleteNode deletes a specific node in a node pool.
-	DeleteNode(ctx context.Context, clusterID, poolID, nodeID string, req *godo.KubernetesNodeDeleteRequest) (*godo.Response, error)
+	UpdateKubernetesCluster(clusterID, config civogo.KubernetesClusterConfig) (*civogo.KubernetesCluster, error)
 }
 
-// Manager handles DigitalOcean communication and data caching of
-// node groups (node pools in DOKS)
+// Manager handles Civo communication and data caching of
+// node groups
 type Manager struct {
-	client     nodeGroupClient
+	client     *civogo.Client
 	clusterID  string
+	minNodes int
+	maxNodes int
 	nodeGroups []*NodeGroup
 }
 
-// Config is the configuration of the DigitalOcean cloud provider
+// Config is the configuration of the Civo cloud provider
 type Config struct {
-	// ClusterID is the id associated with the cluster where DigitalOcean
+	// ClusterID is the id associated with the cluster where Civo
 	// Cluster Autoscaler is running.
 	ClusterID string `json:"cluster_id"`
 
-	// Token is the User's Access Token associated with the cluster where
-	// DigitalOcean Cluster Autoscaler is running.
-	Token string `json:"token"`
+	// ApiKey is the Civo User's API Key associated with the cluster where
+	// Civo Cluster Autoscaler is running.
+	ApiKey string `json:"api_key"`
 
-	// URL points to DigitalOcean API. If empty, defaults to
-	// https://api.digitalocean.com/
-	URL string `json:"url"`
+	// MinNodes is the minimum number of nodes for the cluster to have
+	MinNodes int `json:"min_nodes"`
+
+	// MinNodes is the minimum number of nodes for the cluster to have
+	MaxNodes int `json:"max_nodes"`
 }
 
 func newManager(configReader io.Reader) (*Manager, error) {
@@ -80,34 +79,30 @@ func newManager(configReader io.Reader) (*Manager, error) {
 		}
 	}
 
-	if cfg.Token == "" {
+	if cfg.ApiKey == "" {
 		return nil, errors.New("access token is not provided")
 	}
 	if cfg.ClusterID == "" {
 		return nil, errors.New("cluster ID is not provided")
 	}
-
-	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
-		AccessToken: cfg.Token,
-	})
-	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
-
-	opts := []godo.ClientOpt{}
-	if cfg.URL != "" {
-		opts = append(opts, godo.SetBaseURL(cfg.URL))
+	if cfg.MinNodes == 0 {
+		return nil, errors.New("cluster minimum nodes is not provided")
+	}
+	if cfg.MaxNodes == 0 {
+		return nil, errors.New("cluster maximum nodes is not provided")
 	}
 
-	opts = append(opts, godo.SetUserAgent("cluster-autoscaler-digitalocean/"+version))
+	civoClient, err := civogo.NewClient(cfg.ApiKey)
 
-	doClient, err := godo.New(oauthClient, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't initialize DigitalOcean client: %s", err)
+		return nil, fmt.Errorf("couldn't initialize Civo client: %s", err)
 	}
 
 	m := &Manager{
-		client:     doClient.Kubernetes,
-		clusterID:  cfg.ClusterID,
-		nodeGroups: make([]*NodeGroup, 0),
+		client:    civoClient,
+		clusterID: cfg.ClusterID,
+		minNodes: cfg.MinNodes,
+		maxNodes: cfg.MaxNodes,
 	}
 
 	return m, nil
@@ -116,30 +111,21 @@ func newManager(configReader io.Reader) (*Manager, error) {
 // Refresh refreshes the cache holding the nodegroups. This is called by the CA
 // based on the `--scan-interval`. By default it's 10 seconds.
 func (m *Manager) Refresh() error {
-	ctx := context.Background()
-	nodePools, _, err := m.client.ListNodePools(ctx, m.clusterID, nil)
+	kubernetesCluster, err := m.client.GetKubernetesClusters(m.clusterID)
 	if err != nil {
 		return err
 	}
 
+	klog.V(4).Infof("adding node pool: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, 1, 10)
 	var group []*NodeGroup
-	for _, nodePool := range nodePools {
-		if !nodePool.AutoScale {
-			continue
-		}
-
-		klog.V(4).Infof("adding node pool: %q name: %s min: %d max: %d",
-			nodePool.ID, nodePool.Name, nodePool.MinNodes, nodePool.MaxNodes)
-
-		group = append(group, &NodeGroup{
-			id:        nodePool.ID,
-			clusterID: m.clusterID,
+	group = append(group, &NodeGroup{
+			id:        kubernetesCluster.ID,
+			clusterID: kubernetesCluster.ID,
 			client:    m.client,
-			nodePool:  nodePool,
-			minSize:   nodePool.MinNodes,
-			maxSize:   nodePool.MaxNodes,
+			kubernetesCluster:  kubernetesCluster,
+			minSize:   m.minNodes,
+			maxSize:   m.maxNodes,
 		})
-	}
 
 	if len(group) == 0 {
 		klog.V(4).Info("cluster-autoscaler is disabled. no node pools are configured")
