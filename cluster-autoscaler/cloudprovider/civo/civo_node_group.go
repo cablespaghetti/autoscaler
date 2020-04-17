@@ -55,7 +55,8 @@ func (n *NodeGroup) MinSize() int {
 // registration or removed nodes are deleted completely). Implementation
 // required.
 func (n *NodeGroup) TargetSize() (int, error) {
-	return n.kubernetesCluster.NumTargetNode, nil
+	// Return Civo target number of nodes minus the master
+	return n.kubernetesCluster.NumTargetNode - 1, nil
 }
 
 // IncreaseSize increases the size of the node group. To delete a node you need
@@ -66,15 +67,19 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 		return fmt.Errorf("delta must be positive, have: %d", delta)
 	}
 
-	targetSize := n.kubernetesCluster.NumTargetNode + delta
+	currentTarget, _ := n.TargetSize()
 
-	if targetSize > n.MaxSize() {
+	newTarget := currentTarget + delta
+
+	if newTarget > n.MaxSize() {
 		return fmt.Errorf("size increase is too large. current: %d desired: %d max: %d",
-			n.kubernetesCluster.NumTargetNode, targetSize, n.MaxSize())
+			currentTarget, newTarget, n.MaxSize())
 	}
 
+	// Add 1 to the value we send to Civo, to take account of the master node
+	civoNewTarget := newTarget + 1
 	req := &civogo.KubernetesClusterConfig{
-		NumTargetNodes: targetSize,
+		NumTargetNodes: civoNewTarget,
 	}
 
 	updatedKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
@@ -82,13 +87,13 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 		return err
 	}
 
-	if updatedKubernetesCluster.NumTargetNode != targetSize {
+	if updatedKubernetesCluster.NumTargetNode != civoNewTarget {
 		return fmt.Errorf("couldn't increase size to %d (delta: %d). Current size is: %d",
-			targetSize, delta, updatedKubernetesCluster.NumTargetNode)
+			newTarget, delta, updatedKubernetesCluster.NumTargetNode-1)
 	}
 
 	// update internal cache
-	n.kubernetesCluster.NumTargetNode = targetSize
+	n.kubernetesCluster.NumTargetNode = civoNewTarget
 	return nil
 }
 
@@ -99,18 +104,23 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 	for _, node := range nodes {
 		nodeID := node.Name
-		targetSize := n.kubernetesCluster.NumTargetNode - 1
+		currentTarget, _ := n.TargetSize()
+		newTarget := currentTarget - 1
+
+		// Add 1 to the value we send to Civo, to take account of the master node
+		civoNewTarget := newTarget + 1
 		req := &civogo.KubernetesClusterConfig{
-			NumTargetNodes: targetSize,
+			NumTargetNodes: civoNewTarget,
 			NodeDestroy: nodeID,
 		}
+
 		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {
 			return fmt.Errorf("deleting node failed for cluster: %q node pool: %q node: %q: %s",
 				n.clusterID, n.id, nodeID, err)
 		}
 
-		// decrement the count by one  after a successful delete
+		// decrement the count by one after a successful delete
 		n.kubernetesCluster.NumTargetNode--
 	}
 
@@ -127,27 +137,30 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 		return fmt.Errorf("delta must be negative, have: %d", delta)
 	}
 
-	targetSize := n.kubernetesCluster.NumTargetNode + delta
-	if targetSize <= n.MinSize() {
+	currentTarget, _ := n.TargetSize()
+	newTarget := currentTarget + delta
+	if newTarget <= n.MinSize() {
 		return fmt.Errorf("size decrease is too small. current: %d desired: %d min: %d",
-			n.kubernetesCluster.NumTargetNode, targetSize, n.MinSize())
+			currentTarget, newTarget, n.MinSize())
 	}
 
+	// Add 1 to the value we send to Civo, to take account of the master node
+	civoNewTarget := newTarget + 1
 	req := &civogo.KubernetesClusterConfig{
-		NumTargetNodes: targetSize,
+		NumTargetNodes: civoNewTarget,
 	}
 	updateKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 	if err != nil {
 		return err
 	}
 
-	if updateKubernetesCluster.NumTargetNode != targetSize {
+	if updateKubernetesCluster.NumTargetNode != civoNewTarget {
 		return fmt.Errorf("couldn't increase size to %d (delta: %d). Current size is: %d",
-			targetSize, delta, updateKubernetesCluster.NumTargetNode)
+			newTarget, delta, updateKubernetesCluster.NumTargetNode-1)
 	}
 
 	// update internal cache
-	n.kubernetesCluster.NumTargetNode = targetSize
+	n.kubernetesCluster.NumTargetNode = civoNewTarget
 	return nil
 }
 
