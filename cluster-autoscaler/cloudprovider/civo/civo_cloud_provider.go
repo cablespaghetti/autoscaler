@@ -153,7 +153,7 @@ func BuildCivo(
 		defer configFile.Close()
 	}
 
-	manager, err := newManager(configFile)
+	manager, err := newManager(configFile, do)
 	if err != nil {
 		klog.Fatalf("Failed to create Civo manager: %v", err)
 	}
