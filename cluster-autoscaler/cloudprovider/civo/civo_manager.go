@@ -62,7 +62,7 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 		}
 	} else {
 		cfg.ApiKey = os.Getenv("CIVO_API_KEY")
-		cfg.ApiKey = os.Getenv("CIVO_CLUSTER_ID")
+		cfg.ClusterID = os.Getenv("CIVO_CLUSTER_ID")
 	}
 
 	if cfg.ApiKey == "" {
