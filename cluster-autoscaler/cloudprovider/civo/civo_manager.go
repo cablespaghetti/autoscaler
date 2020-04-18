@@ -90,16 +90,16 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 			return nil, fmt.Errorf("failed to parse node group spec: %v", err)
 		}
 		if spec.Name == "workers" {
-			minNodes := spec.MinSize
-			maxNodes := spec.MaxSize
-			klog.V(4).Infof("found configuration for workers node group: min: %d max: %d", minNodes, maxNodes)
+			minSize := spec.MinSize
+			maxSize := spec.MaxSize
+			klog.V(4).Infof("found configuration for workers node group: min: %d max: %d", minSize, maxSize)
 			group = append(group, &NodeGroup{
-				id:        "workers",
-				clusterID: cfg.ClusterID,
-				client:    civoClient,
-				kubernetesCluster:  kubernetesCluster,
-				minSize:   minNodes,
-				maxSize:   maxNodes,
+				id:                "workers",
+				clusterID:         cfg.ClusterID,
+				client:            civoClient,
+				kubernetesCluster: kubernetesCluster,
+				minSize:           minSize,
+				maxSize:           maxSize,
 			})
 		}
 	}
@@ -108,8 +108,8 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 	}
 
 	m := &Manager{
-		client:    civoClient,
-		clusterID: cfg.ClusterID,
+		client:     civoClient,
+		clusterID:  cfg.ClusterID,
 		nodeGroups: group,
 	}
 
@@ -126,13 +126,13 @@ func (m *Manager) Refresh() error {
 	klog.V(4).Infof("refreshing workers node group kubernetes cluster: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, m.nodeGroups[0].MinSize(), m.nodeGroups[0].MaxSize())
 	var group []*NodeGroup
 	group = append(group, &NodeGroup{
-			id:        "workers",
-			clusterID: kubernetesCluster.ID,
-			client:    m.client,
-			kubernetesCluster:  kubernetesCluster,
-			minSize:   m.nodeGroups[0].MinSize(),
-			maxSize:   m.nodeGroups[0].MaxSize(),
-		})
+		id:                "workers",
+		clusterID:         kubernetesCluster.ID,
+		client:            m.client,
+		kubernetesCluster: kubernetesCluster,
+		minSize:           m.nodeGroups[0].MinSize(),
+		maxSize:           m.nodeGroups[0].MaxSize(),
+	})
 
 	m.nodeGroups = group
 	return nil
