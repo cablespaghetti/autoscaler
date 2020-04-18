@@ -31,12 +31,12 @@ import (
 // configuration info and functions to control a set of nodes that have the
 // same capacity and set of labels.
 type NodeGroup struct {
-	id        string
-	clusterID string
-	client    *civogo.Client
-	kubernetesCluster  *civogo.KubernetesCluster
-	minSize int
-	maxSize int
+	id                string
+	clusterID         string
+	client            *civogo.Client
+	kubernetesCluster *civogo.KubernetesCluster
+	minSize           int
+	maxSize           int
 }
 
 // MaxSize returns maximum size of the node group.
@@ -110,7 +110,7 @@ func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 		civoNewTarget := newTarget + 1
 		req := &civogo.KubernetesClusterConfig{
 			NumTargetNodes: civoNewTarget,
-			NodeDestroy: node.Name,
+			NodeDestroy:    node.Name,
 		}
 
 		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)

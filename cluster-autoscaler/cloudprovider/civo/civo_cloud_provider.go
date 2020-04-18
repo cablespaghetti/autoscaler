@@ -31,7 +31,7 @@ var _ cloudprovider.CloudProvider = (*civoCloudProvider)(nil)
 
 const (
 	// GPULabel is the label added to nodes with GPU resource.
-    GPULabel = "civo.com/gpu-node"
+	GPULabel = "civo.com/gpu-node"
 )
 
 // civoCloudProvider implements CloudProvider interface.
