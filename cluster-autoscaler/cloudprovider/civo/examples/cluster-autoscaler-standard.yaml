@@ -155,8 +155,6 @@ spec:
             - --nodes=1:10:workers
             - --skip-nodes-with-local-storage=false
             - --skip-nodes-with-system-pods=false
-            - --scale-down-unneeded-time=1m
-            - --scale-down-delay-after-add=1m
           env:
             - name: CIVO_API_KEY
               valueFrom:
