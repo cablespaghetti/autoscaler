@@ -24,22 +24,11 @@ import (
 	"io/ioutil"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
+	"os"
 
 	"github.com/civo/civogo"
 	"k8s.io/klog"
 )
-
-var (
-	version = "dev"
-)
-
-type nodeGroupClient interface {
-	// ListNodePools lists all the node pools found in a Kubernetes cluster.
-	GetKubernetesClusters(clusterID string) (*civogo.KubernetesCluster, error)
-
-	// UpdateNodePool updates the details of an existing node pool.
-	UpdateKubernetesCluster(clusterID, config civogo.KubernetesClusterConfig) (*civogo.KubernetesCluster, error)
-}
 
 // Manager handles Civo communication and data caching of
 // node groups
@@ -53,11 +42,11 @@ type Manager struct {
 type Config struct {
 	// ClusterID is the id associated with the cluster where Civo
 	// Cluster Autoscaler is running.
-	ClusterID string `json:"cluster_id"`
+	ClusterID string `json:"cluster_id" yaml:"cluster_id"`
 
 	// ApiKey is the Civo User's API Key associated with the cluster where
 	// Civo Cluster Autoscaler is running.
-	ApiKey string `json:"api_key"`
+	ApiKey string `json:"api_key" yaml:"api_key"`
 }
 
 func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*Manager, error) {
@@ -71,12 +60,14 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		cfg.ApiKey = os.Getenv("CIVO_API_KEY")
+		cfg.ApiKey = os.Getenv("CIVO_CLUSTER_ID")
 	}
 
 	if cfg.ApiKey == "" {
 		return nil, errors.New("access token is not provided")
 	}
-
 	if cfg.ClusterID == "" {
 		return nil, errors.New("cluster ID is not provided")
 	}

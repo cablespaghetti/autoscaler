@@ -103,7 +103,6 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 // until node group size is updated. Implementation required.
 func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 	for _, node := range nodes {
-		nodeID := node.Name
 		currentTarget, _ := n.TargetSize()
 		newTarget := currentTarget - 1
 
@@ -111,13 +110,13 @@ func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 		civoNewTarget := newTarget + 1
 		req := &civogo.KubernetesClusterConfig{
 			NumTargetNodes: civoNewTarget,
-			NodeDestroy: nodeID,
+			NodeDestroy: node.Name,
 		}
 
 		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {
 			return fmt.Errorf("deleting node failed for cluster: %q node pool: %q node: %q: %s",
-				n.clusterID, n.id, nodeID, err)
+				n.clusterID, n.id, node.Name, err)
 		}
 
 		// decrement the count by one after a successful delete
