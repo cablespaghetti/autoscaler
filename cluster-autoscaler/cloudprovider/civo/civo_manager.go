@@ -30,12 +30,21 @@ import (
 	"k8s.io/klog"
 )
 
+type nodeGroupClient interface {
+	// GetKubernetesClusters retrieves the Kubernetes cluster details from the Civo API.
+	GetKubernetesClusters(id string) (*civogo.KubernetesCluster, error)
+
+	// UpdateKubernetesCluster upddates an existing Kubernetes cluster with the Civo API.
+	UpdateKubernetesCluster(id string, i *civogo.KubernetesClusterConfig) (*civogo.KubernetesCluster, error)
+}
+
 // Manager handles Civo communication and data caching of
 // node groups
 type Manager struct {
-	client     *civogo.Client
+	client     nodeGroupClient
 	clusterID  string
 	nodeGroups []*NodeGroup
+	discoveryOpts cloudprovider.NodeGroupDiscoveryOptions
 }
 
 // Config is the configuration of the Civo cloud provider
@@ -78,39 +87,11 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 		return nil, fmt.Errorf("couldn't initialize Civo client: %s", err)
 	}
 
-	kubernetesCluster, err := civoClient.GetKubernetesClusters(cfg.ClusterID)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get Kubernetes cluster from Civo API: %s", err)
-	}
-
-	var group []*NodeGroup
-	for _, specString := range discoveryOpts.NodeGroupSpecs {
-		spec, err := dynamic.SpecFromString(specString, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse node group spec: %v", err)
-		}
-		if spec.Name == "workers" {
-			minSize := spec.MinSize
-			maxSize := spec.MaxSize
-			klog.V(4).Infof("found configuration for workers node group: min: %d max: %d", minSize, maxSize)
-			group = append(group, &NodeGroup{
-				id:                "workers",
-				clusterID:         cfg.ClusterID,
-				client:            civoClient,
-				kubernetesCluster: kubernetesCluster,
-				minSize:           minSize,
-				maxSize:           maxSize,
-			})
-		}
-	}
-	if len(group) < 1 {
-		return nil, fmt.Errorf("no workers node group configuration found")
-	}
-
 	m := &Manager{
 		client:     civoClient,
 		clusterID:  cfg.ClusterID,
-		nodeGroups: group,
+		nodeGroups: make([]*NodeGroup, 0),
+		discoveryOpts: discoveryOpts,
 	}
 
 	return m, nil
@@ -119,21 +100,38 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 // Refresh refreshes the cache holding the nodegroups. This is called by the CA
 // based on the `--scan-interval`. By default it's 10 seconds.
 func (m *Manager) Refresh() error {
+	var minSize int
+	var maxSize int
+	var workerConfigFound = false
+	for _, specString := range m.discoveryOpts.NodeGroupSpecs {
+		spec, err := dynamic.SpecFromString(specString, true)
+		if err != nil {
+			return fmt.Errorf("failed to parse node group spec: %v", err)
+		}
+		if spec.Name == "workers" {
+			minSize := spec.MinSize
+			maxSize := spec.MaxSize
+			workerConfigFound = true
+			klog.V(4).Infof("found configuration for workers node group: min: %d max: %d", minSize, maxSize)
+		}
+	}
+	if !workerConfigFound {
+		return fmt.Errorf("no workers node group configuration found")
+	}
 	kubernetesCluster, err := m.client.GetKubernetesClusters(m.clusterID)
 	if err != nil {
 		return err
 	}
-	klog.V(4).Infof("refreshing workers node group kubernetes cluster: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, m.nodeGroups[0].MinSize(), m.nodeGroups[0].MaxSize())
+	klog.V(4).Infof("refreshing workers node group kubernetes cluster: %q name: %s min: %d max: %d", kubernetesCluster.ID, kubernetesCluster.Name, minSize, maxSize)
 	var group []*NodeGroup
 	group = append(group, &NodeGroup{
 		id:                "workers",
 		clusterID:         kubernetesCluster.ID,
 		client:            m.client,
 		kubernetesCluster: kubernetesCluster,
-		minSize:           m.nodeGroups[0].MinSize(),
-		maxSize:           m.nodeGroups[0].MaxSize(),
+		minSize:           minSize,
+		maxSize:           maxSize,
 	})
-
 	m.nodeGroups = group
 	return nil
 }

@@ -33,7 +33,7 @@ import (
 type NodeGroup struct {
 	id                string
 	clusterID         string
-	client            *civogo.Client
+	client            nodeGroupClient
 	kubernetesCluster *civogo.KubernetesCluster
 	minSize           int
 	maxSize           int
