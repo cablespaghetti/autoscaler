@@ -73,11 +73,11 @@ func (d *civoCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.No
 
 	// Ignore master nodes
 	if node.GetObjectMeta().GetLabels()["node-role.kubernetes.io/master"] == "true" {
-		klog.V(5).Infof("not including node in node group because it is the master: %q", node.Name)
+		klog.V(5).Infof("not including node in the workers node group because it is the master: %q", node.Name)
 		return nil, nil
 	}
 
-	// All other nodes are part of the first and only NodeGroup
+	klog.V(5).Infof("including node in the workers node group: %q", node.Name)
 	return d.manager.nodeGroups[0], nil
 }
 
