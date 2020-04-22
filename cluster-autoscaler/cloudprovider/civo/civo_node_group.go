@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/civo/civogo"
+	"k8s.io/klog"
 
 	apiv1 "k8s.io/api/core/v1"
 
@@ -81,6 +82,7 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 	req := &civogo.KubernetesClusterConfig{
 		NumTargetNodes: civoNewTarget,
 	}
+	klog.V(5).Infof("increasing cluster target size. current civo target nodes: %d new civo target nodes: %d", currentTarget+1, civoNewTarget)
 
 	updatedKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 	if err != nil {
@@ -112,6 +114,7 @@ func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 			NumTargetNodes: civoNewTarget,
 			NodeDestroy:    node.Name,
 		}
+		klog.V(5).Infof("deleting node from cluster: %q current civo target nodes: %d new civo target nodes: %d", node.Name, currentTarget+1, civoNewTarget)
 
 		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {
@@ -139,7 +142,7 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 	currentTarget, _ := n.TargetSize()
 	newTarget := currentTarget + delta
 	if newTarget <= n.MinSize() {
-		return fmt.Errorf("size decrease is too small. current: %d desired: %d min: %d",
+		return fmt.Errorf("size decrease takes cluster below minimum. current: %d desired: %d min: %d",
 			currentTarget, newTarget, n.MinSize())
 	}
 
@@ -148,6 +151,8 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 	req := &civogo.KubernetesClusterConfig{
 		NumTargetNodes: civoNewTarget,
 	}
+	klog.V(5).Infof("decreasing cluster target size. current civo target nodes: %d new civo target nodes: %d", currentTarget+1, civoNewTarget)
+
 	updateKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 	if err != nil {
 		return err
@@ -243,6 +248,10 @@ func toInstance(node civogo.KubernetesInstance) cloudprovider.Instance {
 // toInstanceStatus converts the given civo instance status to a
 // cloudprovider.InstanceStatus
 func toInstanceStatus(nodeState string) *cloudprovider.InstanceStatus {
+	if nodeState == "" {
+		return nil
+	}
+
 	st := &cloudprovider.InstanceStatus{}
 	switch nodeState {
 	case "BUILD", "BUILD_PENDING":
@@ -252,7 +261,11 @@ func toInstanceStatus(nodeState string) *cloudprovider.InstanceStatus {
 	case "DELETING":
 		st.State = cloudprovider.InstanceDeleting
 	default:
-		return nil
+		st.ErrorInfo = &cloudprovider.InstanceErrorInfo{
+			ErrorClass:   cloudprovider.OtherErrorClass,
+			ErrorCode:    "no-code-civo",
+			ErrorMessage: nodeState,
+		}
 	}
 
 	return st

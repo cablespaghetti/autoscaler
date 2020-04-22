@@ -75,10 +75,10 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 	}
 
 	if cfg.ApiKey == "" {
-		return nil, errors.New("access token is not provided")
+		return nil, errors.New("Civo API Key was not provided")
 	}
 	if cfg.ClusterID == "" {
-		return nil, errors.New("cluster ID is not provided")
+		return nil, errors.New("cluster ID was not provided")
 	}
 
 	civoClient, err := civogo.NewClient(cfg.ApiKey)
@@ -109,8 +109,8 @@ func (m *Manager) Refresh() error {
 			return fmt.Errorf("failed to parse node group spec: %v", err)
 		}
 		if spec.Name == "workers" {
-			minSize := spec.MinSize
-			maxSize := spec.MaxSize
+			minSize = spec.MinSize
+			maxSize = spec.MaxSize
 			workerConfigFound = true
 			klog.V(4).Infof("found configuration for workers node group: min: %d max: %d", minSize, maxSize)
 		}
