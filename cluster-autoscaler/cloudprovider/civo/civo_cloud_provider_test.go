@@ -137,8 +137,8 @@ func TestCivoCloudProvider_NodeGroupForNode(t *testing.T) {
 
 		// let's get the nodeGroup for the node with ID 4
 		node := &apiv1.Node{
-			Spec: apiv1.NodeSpec{
-				ProviderID: "kube-node-3",
+			ObjectMeta: v1.ObjectMeta{
+				Name: "kube-node-3",
 			},
 		}
 
@@ -176,10 +176,7 @@ func TestCivoCloudProvider_NodeGroupForNode(t *testing.T) {
 		provider := testCloudProvider(t, client)
 
 		node := &apiv1.Node{
-			ObjectMeta: v1.ObjectMeta{Labels: map[string]string{"node-role.kubernetes.io/master": "true"}},
-			Spec: apiv1.NodeSpec{
-				ProviderID: "kube-node-3",
-			},
+			ObjectMeta: v1.ObjectMeta{Name: "kube-node-3", Labels: map[string]string{"node-role.kubernetes.io/master": "true"}},
 		}
 
 		nodeGroup, err := provider.NodeGroupForNode(node)

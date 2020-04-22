@@ -150,7 +150,12 @@ func BuildCivo(
 		if err != nil {
 			klog.Fatalf("Couldn't open cloud provider configuration %s: %#v", opts.CloudConfig, err)
 		}
-		defer configFile.Close()
+		defer func() {
+			err := configFile.Close()
+			if err == nil {
+				klog.Fatalf("Failed to close Civo cloud provider cloud config file: %v", err)
+			}
+		}()
 	}
 
 	manager, err := newManager(configFile, do)
