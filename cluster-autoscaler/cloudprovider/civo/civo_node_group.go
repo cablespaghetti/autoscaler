@@ -116,14 +116,19 @@ func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 		}
 		klog.V(5).Infof("deleting node from cluster: %q current civo target nodes: %d new civo target nodes: %d", node.Name, currentTarget+1, civoNewTarget)
 
-		_, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
+		updatedKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {
 			return fmt.Errorf("deleting node failed for cluster: %q node pool: %q node: %q: %s",
 				n.clusterID, n.id, node.Name, err)
 		}
 
-		// decrement the count by one after a successful delete
-		n.kubernetesCluster.NumTargetNode--
+		if updatedKubernetesCluster.NumTargetNode != civoNewTarget {
+			return fmt.Errorf("couldn't decrease size to %d (delta: %d). Current size is: %d",
+				newTarget, 1, updatedKubernetesCluster.NumTargetNode-1)
+		}
+
+		// update internal cache
+		n.kubernetesCluster.NumTargetNode = civoNewTarget
 	}
 
 	return nil
@@ -159,7 +164,7 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 	}
 
 	if updateKubernetesCluster.NumTargetNode != civoNewTarget {
-		return fmt.Errorf("couldn't increase size to %d (delta: %d). Current size is: %d",
+		return fmt.Errorf("couldn't decrease size to %d (delta: %d). Current size is: %d",
 			newTarget, delta, updateKubernetesCluster.NumTargetNode-1)
 	}
 

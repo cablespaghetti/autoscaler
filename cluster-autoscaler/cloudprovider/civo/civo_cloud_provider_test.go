@@ -163,10 +163,12 @@ func TestCivoCloudProvider_NodeGroupForNode(t *testing.T) {
 					{
 						Hostname: "kube-node-2",
 						Status: "BUILD_PENDING",
+						Tags: []string{"banana", "civo-kubernetes:node", "apple"},
 					},
 					{
 						Hostname: "kube-node-3",
 						Status: "BUILD",
+						Tags: []string{"banana", "civo-kubernetes:master", "apple"},
 					},
 				},
 			},

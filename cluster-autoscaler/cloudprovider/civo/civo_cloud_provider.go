@@ -70,15 +70,20 @@ func (d *civoCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 // occurred. Must be implemented.
 func (d *civoCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
 	klog.V(5).Infof("checking nodegroup for node ID: %q", node.Name)
-
-	// Ignore master nodes
-	if node.GetObjectMeta().GetLabels()["node-role.kubernetes.io/master"] == "true" {
-		klog.V(5).Infof("not including node in the workers node group because it is the master: %q", node.Name)
-		return nil, nil
+	for _, instance := range d.manager.nodeGroups[0].kubernetesCluster.Instances {
+		if instance.Hostname == node.Name {
+			for _, tag := range instance.Tags {
+				if "civo-kubernetes:master" == tag {
+					klog.V(5).Infof("not including node in the workers node group because it is the master: %q", node.Name)
+					return nil, nil
+				}
+			}
+			klog.V(5).Infof("including node in the workers node group: %q", node.Name)
+			return d.manager.nodeGroups[0], nil
+		}
 	}
-
-	klog.V(5).Infof("including node in the workers node group: %q", node.Name)
-	return d.manager.nodeGroups[0], nil
+	klog.V(5).Infof("not including node in the workers node group because not present in Civo API: %q", node.Name)
+	return nil, nil
 }
 
 // Pricing returns pricing model for this cloud provider or error if not
