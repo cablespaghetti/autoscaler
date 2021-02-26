@@ -138,7 +138,7 @@ spec:
     spec:
       serviceAccountName: cluster-autoscaler
       containers:
-        - image: cablespaghetti/cluster-autoscaler:civo-20200418-build1
+        - image: cablespaghetti/cluster-autoscaler:civo-20210226-build1
           name: cluster-autoscaler
           resources:
             limits:
@@ -162,7 +162,7 @@ spec:
                   key: ApiKey
                   name: cluster-autoscaler
             - name: CIVO_CLUSTER_ID
-              value: "<your cluster id>"
+              value: "c56076fc-c5bc-4f1f-9861-8564719f6ea7"
 ---
 apiVersion: v1
 kind: Secret
@@ -173,4 +173,4 @@ metadata:
     app: cluster-autoscaler
 type: Opaque
 stringData:
-  ApiKey: "<your api key>"
+  ApiKey: "g2IrDds406umvbM5kiAUWoyjqF8ez7HVO1Ch9xJ3PtBQXfnLNZ"

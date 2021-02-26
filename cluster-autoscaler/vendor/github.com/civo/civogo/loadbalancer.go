@@ -42,6 +42,7 @@ type LoadBalancer struct {
 // LoadBalancerConfig represents a load balancer to be created
 type LoadBalancerConfig struct {
 	Hostname                string                      `json:"hostname"`
+	Region                  string                      `json:"region"`
 	Protocol                string                      `json:"protocol"`
 	TLSCertificate          string                      `json:"tls_certificate"`
 	TLSKey                  string                      `json:"tls_key"`
@@ -59,12 +60,12 @@ type LoadBalancerConfig struct {
 func (c *Client) ListLoadBalancers() ([]LoadBalancer, error) {
 	resp, err := c.SendGetRequest("/v2/loadbalancers")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	loadbalancer := make([]LoadBalancer, 0)
 	if err := json.NewDecoder(bytes.NewReader(resp)).Decode(&loadbalancer); err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return loadbalancer, nil
@@ -74,32 +75,41 @@ func (c *Client) ListLoadBalancers() ([]LoadBalancer, error) {
 func (c *Client) FindLoadBalancer(search string) (*LoadBalancer, error) {
 	lbs, err := c.ListLoadBalancers()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := LoadBalancer{}
 
-	for i, lb := range lbs {
-		if strings.Contains(lb.ID, search) || strings.Contains(lb.Hostname, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range lbs {
+		if value.Hostname == search || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(value.Hostname, search) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &lbs[found], nil
 }
 
 // CreateLoadBalancer creates a new load balancer
 func (c *Client) CreateLoadBalancer(r *LoadBalancerConfig) (*LoadBalancer, error) {
 	body, err := c.SendPostRequest("/v2/loadbalancers", r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	loadbalancer := &LoadBalancer{}
@@ -114,7 +124,7 @@ func (c *Client) CreateLoadBalancer(r *LoadBalancerConfig) (*LoadBalancer, error
 func (c *Client) UpdateLoadBalancer(id string, r *LoadBalancerConfig) (*LoadBalancer, error) {
 	body, err := c.SendPutRequest(fmt.Sprintf("/v2/loadbalancers/%s", id), r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	loadbalancer := &LoadBalancer{}
@@ -129,7 +139,7 @@ func (c *Client) UpdateLoadBalancer(id string, r *LoadBalancerConfig) (*LoadBala
 func (c *Client) DeleteLoadBalancer(id string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest(fmt.Sprintf("/v2/loadbalancers/%s", id))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)

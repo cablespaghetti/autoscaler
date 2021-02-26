@@ -53,7 +53,6 @@ func TestListNetworks(t *testing.T) {
 		"/v2/networks": `[{
 			"id": "12345",
 			"name": "my-net",
-			"region": "lon1",
 			"default": false,
 			"cidr": "0.0.0.0/0",
 			"label": "development"
@@ -66,7 +65,7 @@ func TestListNetworks(t *testing.T) {
 		t.Errorf("Request returned an error: %s", err)
 		return
 	}
-	expected := []Network{{ID: "12345", Name: "my-net", Region: "lon1", Default: false, CIDR: "0.0.0.0/0", Label: "development"}}
+	expected := []Network{{ID: "12345", Name: "my-net", Default: false, CIDR: "0.0.0.0/0", Label: "development"}}
 	if !reflect.DeepEqual(got, expected) {
 		t.Errorf("Expected %+v, got %+v", expected, got)
 	}
@@ -89,7 +88,7 @@ func TestFindNetwork(t *testing.T) {
 				"region": "lon1",
 				"default": false,
 				"cidr": "0.0.0.0/0",
-				"label": "development"
+				"label": "production"
 			}
 			]`,
 	})
@@ -115,14 +114,19 @@ func TestFindNetwork(t *testing.T) {
 		t.Errorf("Expected %s, got %s", "67890", got.ID)
 	}
 
+	got, err = client.FindNetwork("production")
+	if got.ID != "67890" {
+		t.Errorf("Expected %s, got %s", "67890", got.ID)
+	}
+
 	_, err = client.FindNetwork("net")
-	if err.Error() != "unable to find net because there were multiple matches" {
+	if err.Error() != "MultipleMatchesError: unable to find net because there were multiple matches" {
 		t.Errorf("Expected %s, got %s", "unable to find net because there were multiple matches", err.Error())
 	}
 
 	_, err = client.FindNetwork("missing")
-	if err.Error() != "unable to find missing, zero matches" {
-		t.Errorf("Expected %s, got %s", "unable to find missing, zero matches", err.Error())
+	if err.Error() != "ZeroMatchesError: unable to find missing, zero matches" {
+		t.Errorf("Expected %s, got %s", "ZeroMatchesError: unable to find missing, zero matches", err.Error())
 	}
 }
 

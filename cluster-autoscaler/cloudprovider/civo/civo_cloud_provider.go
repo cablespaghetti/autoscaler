@@ -25,6 +25,7 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/klog"
 	"os"
+	"strings"
 )
 
 var _ cloudprovider.CloudProvider = (*civoCloudProvider)(nil)
@@ -71,12 +72,10 @@ func (d *civoCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 func (d *civoCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
 	klog.V(5).Infof("checking nodegroup for node ID: %q", node.Name)
 	for _, instance := range d.manager.nodeGroups[0].kubernetesCluster.Instances {
-		if instance.Hostname == node.Name {
-			for _, tag := range instance.Tags {
-				if "civo-kubernetes:master" == tag {
-					klog.V(5).Infof("not including node in the workers node group because it is the master: %q", node.Name)
-					return nil, nil
-				}
+		if strings.HasSuffix(node.Name, instance.Hostname) {
+			if strings.HasPrefix(instance.Hostname, "master") {
+				klog.V(5).Infof("not including node in the workers node group because it is the master: %q", node.Name)
+				return nil, nil
 			}
 			klog.V(5).Infof("including node in the workers node group: %q", node.Name)
 			return d.manager.nodeGroups[0], nil

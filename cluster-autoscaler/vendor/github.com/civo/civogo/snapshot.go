@@ -29,14 +29,14 @@ type SnapshotConfig struct {
 	InstanceID string `json:"instance_id"`
 	Safe       bool   `json:"safe"`
 	Cron       string `json:"cron_timing"`
+	Region     string `json:"region"`
 }
 
 // CreateSnapshot create a new or update an old snapshot
 func (c *Client) CreateSnapshot(name string, r *SnapshotConfig) (*Snapshot, error) {
-	url := fmt.Sprintf("/v2/snapshots/%s", name)
-	body, err := c.SendPutRequest(url, r)
+	body, err := c.SendPutRequest(fmt.Sprintf("/v2/snapshots/%s", name), r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	var n = &Snapshot{}
@@ -51,7 +51,7 @@ func (c *Client) CreateSnapshot(name string, r *SnapshotConfig) (*Snapshot, erro
 func (c *Client) ListSnapshots() ([]Snapshot, error) {
 	resp, err := c.SendGetRequest("/v2/snapshots")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	snapshots := make([]Snapshot, 0)
@@ -66,32 +66,41 @@ func (c *Client) ListSnapshots() ([]Snapshot, error) {
 func (c *Client) FindSnapshot(search string) (*Snapshot, error) {
 	snapshots, err := c.ListSnapshots()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := Snapshot{}
 
-	for i, snapshot := range snapshots {
-		if strings.Contains(snapshot.ID, search) || strings.Contains(snapshot.Name, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range snapshots {
+		if value.Name == search || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(value.Name, search) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &snapshots[found], nil
 }
 
 // DeleteSnapshot deletes a snapshot
 func (c *Client) DeleteSnapshot(name string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest(fmt.Sprintf("/v2/snapshots/%s", name))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)

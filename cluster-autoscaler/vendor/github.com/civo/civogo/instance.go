@@ -38,9 +38,14 @@ type Instance struct {
 	OpenstackImageID         string    `json:"openstack_image_id"`
 	RescuePassword           string    `json:"rescue_password"`
 	VolumeBacked             bool      `json:"volume_backed"`
+	CPUCores                 int       `json:"cpu_cores"`
+	RAMMegabytes             int       `json:"ram_mb"`
+	DiskGigabytes            int       `json:"disk_gb"`
 	Script                   string    `json:"script"`
 	CreatedAt                time.Time `json:"created_at"`
 }
+
+//"cpu_cores":1,"ram_mb":2048,"disk_gb":25
 
 // InstanceConsole represents a link to a webconsole for an instances
 type InstanceConsole struct {
@@ -64,7 +69,7 @@ type InstanceConfig struct {
 	ReverseDNS       string   `json:"reverse_dns"`
 	Size             string   `json:"size"`
 	Region           string   `json:"region"`
-	PublicIPRequired string   `json:"public_ip_required"`
+	PublicIPRequired string   `json:"public_ip"`
 	NetworkID        string   `json:"network_id"`
 	TemplateID       string   `json:"template_id"`
 	SnapshotID       string   `json:"snapshot_id"`
@@ -84,7 +89,7 @@ func (c *Client) ListInstances(page int, perPage int) (*PaginatedInstanceList, e
 
 	resp, err := c.SendGetRequest(url)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	PaginatedInstances := PaginatedInstanceList{}
@@ -96,7 +101,7 @@ func (c *Client) ListInstances(page int, perPage int) (*PaginatedInstanceList, e
 func (c *Client) ListAllInstances() ([]Instance, error) {
 	instances, err := c.ListInstances(1, 99999999)
 	if err != nil {
-		return []Instance{}, err
+		return []Instance{}, decodeERROR(err)
 	}
 
 	return instances.Items, nil
@@ -106,32 +111,41 @@ func (c *Client) ListAllInstances() ([]Instance, error) {
 func (c *Client) FindInstance(search string) (*Instance, error) {
 	instances, err := c.ListAllInstances()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := Instance{}
 
-	for i, instance := range instances {
-		if strings.Contains(instance.ID, search) || strings.Contains(instance.Hostname, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range instances {
+		if value.Hostname == search || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(value.Hostname, search) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &instances[found], nil
 }
 
 // GetInstance returns a single Instance by its full ID
 func (c *Client) GetInstance(id string) (*Instance, error) {
 	resp, err := c.SendGetRequest("/v2/instances/" + id)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	instance := Instance{}
@@ -143,12 +157,12 @@ func (c *Client) GetInstance(id string) (*Instance, error) {
 func (c *Client) NewInstanceConfig() (*InstanceConfig, error) {
 	network, err := c.GetDefaultNetwork()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	template, err := c.GetTemplateByCode("ubuntu-18.04")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return &InstanceConfig{
@@ -156,7 +170,7 @@ func (c *Client) NewInstanceConfig() (*InstanceConfig, error) {
 		Hostname:         utils.RandomName(),
 		ReverseDNS:       "",
 		Size:             "g2.xsmall",
-		Region:           "lon1",
+		Region:           c.Region,
 		PublicIPRequired: "true",
 		NetworkID:        network.ID,
 		TemplateID:       template.ID,
@@ -173,7 +187,7 @@ func (c *Client) CreateInstance(config *InstanceConfig) (*Instance, error) {
 	config.TagsList = strings.Join(config.Tags, " ")
 	body, err := c.SendPostRequest("/v2/instances", config)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	var instance Instance
@@ -190,7 +204,7 @@ func (c *Client) SetInstanceTags(i *Instance, tags string) (*SimpleResponse, err
 		"tags": tags,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -211,7 +225,7 @@ func (c *Client) UpdateInstance(i *Instance) (*SimpleResponse, error) {
 
 	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/instances/%s", i.ID), params)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -222,7 +236,7 @@ func (c *Client) UpdateInstance(i *Instance) (*SimpleResponse, error) {
 func (c *Client) DeleteInstance(id string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest("/v2/instances/" + id)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -238,7 +252,7 @@ func (c *Client) RebootInstance(id string) (*SimpleResponse, error) {
 func (c *Client) HardRebootInstance(id string) (*SimpleResponse, error) {
 	resp, err := c.SendPostRequest(fmt.Sprintf("/v2/instances/%s/hard_reboots", id), "")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -249,7 +263,7 @@ func (c *Client) HardRebootInstance(id string) (*SimpleResponse, error) {
 func (c *Client) SoftRebootInstance(id string) (*SimpleResponse, error) {
 	resp, err := c.SendPostRequest(fmt.Sprintf("/v2/instances/%s/soft_reboots", id), "")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -260,7 +274,7 @@ func (c *Client) SoftRebootInstance(id string) (*SimpleResponse, error) {
 func (c *Client) StopInstance(id string) (*SimpleResponse, error) {
 	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/instances/%s/stop", id), "")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -271,7 +285,7 @@ func (c *Client) StopInstance(id string) (*SimpleResponse, error) {
 func (c *Client) StartInstance(id string) (*SimpleResponse, error) {
 	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/instances/%s/start", id), "")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -282,7 +296,7 @@ func (c *Client) StartInstance(id string) (*SimpleResponse, error) {
 func (c *Client) GetInstanceConsoleURL(id string) (string, error) {
 	resp, err := c.SendGetRequest(fmt.Sprintf("/v2/instances/%s/console", id))
 	if err != nil {
-		return "", err
+		return "", decodeERROR(err)
 	}
 
 	console := InstanceConsole{}
@@ -297,7 +311,7 @@ func (c *Client) UpgradeInstance(id, newSize string) (*SimpleResponse, error) {
 		"size": newSize,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -308,7 +322,7 @@ func (c *Client) UpgradeInstance(id, newSize string) (*SimpleResponse, error) {
 func (c *Client) MovePublicIPToInstance(id, ipAddress string) (*SimpleResponse, error) {
 	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/instances/%s/ip/%s", id, ipAddress), "")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)
@@ -321,7 +335,7 @@ func (c *Client) SetInstanceFirewall(id, firewallID string) (*SimpleResponse, er
 		"firewall_id": firewallID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	response, err := c.DecodeSimpleResponse(resp)

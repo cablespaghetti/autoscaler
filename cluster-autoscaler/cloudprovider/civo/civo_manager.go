@@ -81,7 +81,7 @@ func newManager(configReader io.Reader, discoveryOpts cloudprovider.NodeGroupDis
 		return nil, errors.New("cluster ID was not provided")
 	}
 
-	civoClient, err := civogo.NewClient(cfg.ApiKey)
+	civoClient, err := civogo.NewClient(cfg.ApiKey, "NYC1")
 
 	if err != nil {
 		return nil, fmt.Errorf("couldn't initialize Civo client: %s", err)

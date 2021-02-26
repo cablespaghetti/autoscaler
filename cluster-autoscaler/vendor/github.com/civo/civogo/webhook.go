@@ -29,7 +29,7 @@ type WebhookConfig struct {
 func (c *Client) CreateWebhook(r *WebhookConfig) (*Webhook, error) {
 	body, err := c.SendPostRequest("/v2/webhooks", r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	var n = &Webhook{}
@@ -44,7 +44,7 @@ func (c *Client) CreateWebhook(r *WebhookConfig) (*Webhook, error) {
 func (c *Client) ListWebhooks() ([]Webhook, error) {
 	resp, err := c.SendGetRequest("/v2/webhooks")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	webhook := make([]Webhook, 0)
@@ -59,32 +59,41 @@ func (c *Client) ListWebhooks() ([]Webhook, error) {
 func (c *Client) FindWebhook(search string) (*Webhook, error) {
 	webhooks, err := c.ListWebhooks()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := Webhook{}
 
-	for i, webhook := range webhooks {
-		if strings.Contains(webhook.ID, search) || strings.Contains(webhook.URL, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range webhooks {
+		if value.URL == search || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(value.URL, search) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &webhooks[found], nil
 }
 
 // UpdateWebhook updates a webhook
 func (c *Client) UpdateWebhook(id string, r *WebhookConfig) (*Webhook, error) {
 	body, err := c.SendPutRequest(fmt.Sprintf("/v2/webhooks/%s", id), r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	var n = &Webhook{}
@@ -99,7 +108,7 @@ func (c *Client) UpdateWebhook(id string, r *WebhookConfig) (*Webhook, error) {
 func (c *Client) DeleteWebhook(id string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest(fmt.Sprintf("/v2/webhooks/%s", id))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)

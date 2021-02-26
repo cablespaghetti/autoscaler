@@ -20,6 +20,7 @@ func TestListKubernetesClusters(t *testing.T) {
 		  "kubeconfig": "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		  "kubernetes_version": "0.8.1",
 		  "api_endpoint": "https://your.cluster.ip.address:6443",
+		  "master_ip": "your.cluster.ip.address",
 		  "dns_entry": "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		  "tags": [],
 		  "created_at": "2019-09-23T13:02:59.000+01:00",
@@ -80,6 +81,7 @@ func TestListKubernetesClusters(t *testing.T) {
 				KubeConfig:        "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 				KubernetesVersion: "0.8.1",
 				APIEndPoint:       "https://your.cluster.ip.address:6443",
+				MasterIP:          "your.cluster.ip.address",
 				DNSEntry:          "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 				CreatedAt:         createAt,
 				Tags:              []string{},
@@ -104,7 +106,7 @@ func TestListKubernetesClusters(t *testing.T) {
 					Installed:     true,
 					Category:      "architecture",
 					ImageURL:      "https://api.civo.com/k3s-marketplace/traefik.png",
-					Configuration: map[string]string{},
+					Configuration: map[string]ApplicationConfiguration{},
 				}},
 			},
 		},
@@ -138,18 +140,23 @@ func TestFindKubernetesCluster(t *testing.T) {
 		t.Errorf("Expected %s, got %s", "69a23478-a89e-41d2-97b1-6f4c341cee70", got.ID)
 	}
 
+	got, _ = client.FindKubernetesCluster("YOUR-FIRST-CLUSTER-NAME")
+	if got.ID != "69a23478-a89e-41d2-97b1-6f4c341cee70" {
+		t.Errorf("Expected %s, got %s", "69a23478-a89e-41d2-97b1-6f4c341cee70", got.ID)
+	}
+
 	got, _ = client.FindKubernetesCluster("second")
 	if got.ID != "d1cd0b71-5da1-492e-9d0d-a46ccdaae2fa" {
 		t.Errorf("Expected %s, got %s", "d1cd0b71-5da1-492e-9d0d-a46ccdaae2fa", got.ID)
 	}
 
 	_, err = client.FindKubernetesCluster("cluster")
-	if err.Error() != "unable to find cluster because there were multiple matches" {
+	if err.Error() != "MultipleMatchesError: unable to find cluster because there were multiple matches" {
 		t.Errorf("Expected %s, got %s", "unable to find cluster because there were multiple matches", err.Error())
 	}
 
 	_, err = client.FindKubernetesCluster("missing")
-	if err.Error() != "unable to find missing, zero matches" {
+	if err.Error() != "ZeroMatchesError: unable to find missing, zero matches" {
 		t.Errorf("Expected %s, got %s", "unable to find missing, zero matches", err.Error())
 	}
 }
@@ -168,6 +175,7 @@ func TestNewKubernetesClusters(t *testing.T) {
 		  "kubeconfig": "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		  "kubernetes_version": "0.8.1",
 		  "api_endpoint": "https://your.cluster.ip.address:6443",
+		  "master_ip": "your.cluster.ip.address",
 		  "dns_entry": "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		  "tags": [],
 		  "created_at": "2019-09-23T13:02:59.000+01:00",
@@ -233,6 +241,7 @@ func TestNewKubernetesClusters(t *testing.T) {
 		KubeConfig:        "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		KubernetesVersion: "0.8.1",
 		APIEndPoint:       "https://your.cluster.ip.address:6443",
+		MasterIP:          "your.cluster.ip.address",
 		DNSEntry:          "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		CreatedAt:         createAt,
 		Tags:              []string{},
@@ -257,7 +266,7 @@ func TestNewKubernetesClusters(t *testing.T) {
 			Installed:     true,
 			Category:      "architecture",
 			ImageURL:      "https://api.civo.com/k3s-marketplace/traefik.png",
-			Configuration: map[string]string{},
+			Configuration: map[string]ApplicationConfiguration{},
 		}},
 	}
 
@@ -280,6 +289,7 @@ func TestGetKubernetesClusters(t *testing.T) {
 		  "kubeconfig": "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		  "kubernetes_version": "0.8.1",
 		  "api_endpoint": "https://your.cluster.ip.address:6443",
+		  "master_ip": "your.cluster.ip.address",
 		  "dns_entry": "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		  "tags": [],
 		  "created_at": "2019-09-23T13:02:59.000+01:00",
@@ -336,6 +346,7 @@ func TestGetKubernetesClusters(t *testing.T) {
 		KubeConfig:        "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		KubernetesVersion: "0.8.1",
 		APIEndPoint:       "https://your.cluster.ip.address:6443",
+		MasterIP:          "your.cluster.ip.address",
 		DNSEntry:          "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		CreatedAt:         createAt,
 		Tags:              []string{},
@@ -360,7 +371,7 @@ func TestGetKubernetesClusters(t *testing.T) {
 			Installed:     true,
 			Category:      "architecture",
 			ImageURL:      "https://api.civo.com/k3s-marketplace/traefik.png",
-			Configuration: map[string]string{},
+			Configuration: map[string]ApplicationConfiguration{},
 		}},
 	}
 
@@ -383,6 +394,7 @@ func TestUpdateKubernetesClusters(t *testing.T) {
 		  "kubeconfig": "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		  "kubernetes_version": "0.8.1",
 		  "api_endpoint": "https://your.cluster.ip.address:6443",
+		  "master_ip": "your.cluster.ip.address",
 		  "dns_entry": "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		  "tags": [],
 		  "created_at": "2019-09-23T13:02:59.000+01:00",
@@ -444,6 +456,7 @@ func TestUpdateKubernetesClusters(t *testing.T) {
 		KubeConfig:        "YAML_VERSION_OF_KUBECONFIG_HERE\n",
 		KubernetesVersion: "0.8.1",
 		APIEndPoint:       "https://your.cluster.ip.address:6443",
+		MasterIP:          "your.cluster.ip.address",
 		DNSEntry:          "69a23478-a89e-41d2-97b1-6f4c341cee70.k8s.civo.com",
 		CreatedAt:         createAt,
 		Tags:              []string{},
@@ -468,7 +481,7 @@ func TestUpdateKubernetesClusters(t *testing.T) {
 			Installed:     true,
 			Category:      "architecture",
 			ImageURL:      "https://api.civo.com/k3s-marketplace/traefik.png",
-			Configuration: map[string]string{},
+			Configuration: map[string]ApplicationConfiguration{},
 		}},
 	}
 

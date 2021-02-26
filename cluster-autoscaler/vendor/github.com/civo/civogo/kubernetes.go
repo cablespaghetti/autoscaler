@@ -10,34 +10,40 @@ import (
 
 // KubernetesInstance represents a single node/master within a Kubernetes cluster
 type KubernetesInstance struct {
-	Hostname   string    `json:"hostname"`
-	Size       string    `json:"size"`
-	Region     string    `json:"region"`
-	CreatedAt  time.Time `json:"created_at"`
-	Status     string    `json:"status"`
-	FirewallID string    `json:"firewall_id"`
-	PublicIP   string    `json:"public_ip"`
-	Tags       []string  `json:"tags"`
+	Hostname      string    `json:"hostname"`
+	Size          string    `json:"size"`
+	Region        string    `json:"region"`
+	CreatedAt     time.Time `json:"created_at"`
+	Status        string    `json:"status"`
+	FirewallID    string    `json:"firewall_id"`
+	PublicIP      string    `json:"public_ip"`
+	CPUCores      int       `json:"cpu_cores"`
+	RAMMegabytes  int       `json:"ram_mb"`
+	DiskGigabytes int       `json:"disk_gb"`
+	Tags          []string  `json:"tags"`
 }
 
 // KubernetesInstalledApplication is an application within our marketplace available for
 // installation
 type KubernetesInstalledApplication struct {
-	Application   string            `json:"application"`
-	Title         string            `json:"title,omitempty"`
-	Version       string            `json:"version"`
-	Dependencies  []string          `json:"dependencies,omitempty"`
-	Maintainer    string            `json:"maintainer"`
-	Description   string            `json:"description"`
-	PostInstall   string            `json:"post_install"`
-	Installed     bool              `json:"installed"`
-	URL           string            `json:"url"`
-	Category      string            `json:"category"`
-	UpdatedAt     time.Time         `json:"updated_at"`
-	ImageURL      string            `json:"image_url"`
-	Plan          string            `json:"plan,omitempty"`
-	Configuration map[string]string `json:"configuration,omitempty"`
+	Application   string                              `json:"application"`
+	Name          string                              `json:"name,omitempty"`
+	Version       string                              `json:"version"`
+	Dependencies  []string                            `json:"dependencies,omitempty"`
+	Maintainer    string                              `json:"maintainer"`
+	Description   string                              `json:"description"`
+	PostInstall   string                              `json:"post_install"`
+	Installed     bool                                `json:"installed"`
+	URL           string                              `json:"url"`
+	Category      string                              `json:"category"`
+	UpdatedAt     time.Time                           `json:"updated_at"`
+	ImageURL      string                              `json:"image_url"`
+	Plan          string                              `json:"plan,omitempty"`
+	Configuration map[string]ApplicationConfiguration `json:"configuration,omitempty"`
 }
+
+// ApplicationConfiguration is a configuration for installed application
+type ApplicationConfiguration map[string]string
 
 // KubernetesCluster is a Kubernetes item inside the cluster
 type KubernetesCluster struct {
@@ -52,7 +58,9 @@ type KubernetesCluster struct {
 	KubeConfig            string                           `json:"kubeconfig"`
 	KubernetesVersion     string                           `json:"kubernetes_version"`
 	APIEndPoint           string                           `json:"api_endpoint"`
+	MasterIP              string                           `json:"master_ip"`
 	DNSEntry              string                           `json:"dns_entry"`
+	UpgradeAvailableTo    string                           `json:"upgrade_available_to"`
 	Tags                  []string                         `json:"tags"`
 	CreatedAt             time.Time                        `json:"created_at"`
 	Instances             []KubernetesInstance             `json:"instances"`
@@ -70,10 +78,12 @@ type PaginatedKubernetesClusters struct {
 // KubernetesClusterConfig is used to create a new cluster
 type KubernetesClusterConfig struct {
 	Name              string `json:"name"`
+	Region            string `json:"region,omitempty"`
 	NumTargetNodes    int    `json:"num_target_nodes"`
 	TargetNodesSize   string `json:"target_nodes_size"`
 	KubernetesVersion string `json:"kubernetes_version"`
 	NodeDestroy       string `json:"node_destroy"`
+	NetworkID         string `json:"network_id"`
 	Tags              string `json:"tags"`
 	Applications      string `json:"applications"`
 }
@@ -96,7 +106,7 @@ type KubernetesMarketplaceApplication struct {
 	Name         string                      `json:"name"`
 	Title        string                      `json:"title,omitempty"`
 	Version      string                      `json:"version"`
-	Default      string                      `json:"default,omitempty"`
+	Default      bool                        `json:"default,omitempty"`
 	Dependencies []string                    `json:"dependencies,omitempty"`
 	Maintainer   string                      `json:"maintainer"`
 	Description  string                      `json:"description"`
@@ -117,7 +127,7 @@ type KubernetesVersion struct {
 func (c *Client) ListKubernetesClusters() (*PaginatedKubernetesClusters, error) {
 	resp, err := c.SendGetRequest("/v2/kubernetes/clusters")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := &PaginatedKubernetesClusters{}
@@ -132,32 +142,42 @@ func (c *Client) ListKubernetesClusters() (*PaginatedKubernetesClusters, error) 
 func (c *Client) FindKubernetesCluster(search string) (*KubernetesCluster, error) {
 	clusters, err := c.ListKubernetesClusters()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := KubernetesCluster{}
 
-	for i, cluster := range clusters.Items {
-		if strings.Contains(cluster.ID, search) || strings.Contains(cluster.Name, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range clusters.Items {
+		if strings.EqualFold(value.Name, search) || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(strings.ToUpper(value.Name), strings.ToUpper(search)) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &clusters.Items[found], nil
 }
 
 // NewKubernetesClusters create a new cluster of kubernetes
 func (c *Client) NewKubernetesClusters(kc *KubernetesClusterConfig) (*KubernetesCluster, error) {
+	kc.Region = c.Region
 	body, err := c.SendPostRequest("/v2/kubernetes/clusters", kc)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := &KubernetesCluster{}
@@ -172,7 +192,7 @@ func (c *Client) NewKubernetesClusters(kc *KubernetesClusterConfig) (*Kubernetes
 func (c *Client) GetKubernetesClusters(id string) (*KubernetesCluster, error) {
 	resp, err := c.SendGetRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s", id))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := &KubernetesCluster{}
@@ -184,17 +204,10 @@ func (c *Client) GetKubernetesClusters(id string) (*KubernetesCluster, error) {
 
 // UpdateKubernetesCluster update a single kubernetes cluster by its full ID
 func (c *Client) UpdateKubernetesCluster(id string, i *KubernetesClusterConfig) (*KubernetesCluster, error) {
-	params := map[string]interface{}{
-		"name":             i.Name,
-		"node_destroy":     i.NodeDestroy,
-		"num_target_nodes": i.NumTargetNodes,
-		"version":          i.KubernetesVersion,
-		"applications":     i.Applications,
-	}
-
-	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s", id), params)
+	i.Region = c.Region
+	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s", id), i)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := &KubernetesCluster{}
@@ -208,7 +221,7 @@ func (c *Client) UpdateKubernetesCluster(id string, i *KubernetesClusterConfig) 
 func (c *Client) ListKubernetesMarketplaceApplications() ([]KubernetesMarketplaceApplication, error) {
 	resp, err := c.SendGetRequest("/v2/kubernetes/applications")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := make([]KubernetesMarketplaceApplication, 0)
@@ -223,7 +236,7 @@ func (c *Client) ListKubernetesMarketplaceApplications() ([]KubernetesMarketplac
 func (c *Client) DeleteKubernetesCluster(id string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s", id))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)
@@ -231,11 +244,11 @@ func (c *Client) DeleteKubernetesCluster(id string) (*SimpleResponse, error) {
 
 // RecycleKubernetesCluster create a new cluster of kubernetes
 func (c *Client) RecycleKubernetesCluster(id string, hostname string) (*SimpleResponse, error) {
-	body, err := c.SendPostRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s", id), map[string]string{
+	body, err := c.SendPostRequest(fmt.Sprintf("/v2/kubernetes/clusters/%s/recycle", id), map[string]string{
 		"hostname": hostname,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(body)
@@ -245,7 +258,7 @@ func (c *Client) RecycleKubernetesCluster(id string, hostname string) (*SimpleRe
 func (c *Client) ListAvailableKubernetesVersions() ([]KubernetesVersion, error) {
 	resp, err := c.SendGetRequest("/v2/kubernetes/versions")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	kubernetes := make([]KubernetesVersion, 0)

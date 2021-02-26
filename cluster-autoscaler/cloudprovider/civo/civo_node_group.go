@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/civo/civogo"
 	"k8s.io/klog"
+	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
 
@@ -108,13 +109,16 @@ func (n *NodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 		currentTarget, _ := n.TargetSize()
 		newTarget := currentTarget - 1
 
+		// Hack to get the Civo API node name from the Kubernetes node name
+		nodeNameSlice := strings.Split(node.Name, "-")
+		apiNodeName := nodeNameSlice[len(nodeNameSlice)-2] + "-" + nodeNameSlice[len(nodeNameSlice)-1]
 		// Add 1 to the value we send to Civo, to take account of the master node
 		civoNewTarget := newTarget + 1
 		req := &civogo.KubernetesClusterConfig{
 			NumTargetNodes: civoNewTarget,
-			NodeDestroy:    node.Name,
+			NodeDestroy:    apiNodeName,
 		}
-		klog.V(5).Infof("deleting node from cluster: %q current civo target nodes: %d new civo target nodes: %d", node.Name, currentTarget+1, civoNewTarget)
+		klog.V(5).Infof("deleting node from cluster: %q current civo target nodes: %d new civo target nodes: %d", apiNodeName, currentTarget+1, civoNewTarget)
 
 		updatedKubernetesCluster, err := n.client.UpdateKubernetesCluster(n.clusterID, req)
 		if err != nil {

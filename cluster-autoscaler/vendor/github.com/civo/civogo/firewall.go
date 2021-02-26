@@ -13,7 +13,7 @@ type Firewall struct {
 	Name           string `json:"name"`
 	RulesCount     int    `json:"rules_count"`
 	InstancesCount int    `json:"instances_count"`
-	Region         string `json:"region"`
+	NetworkID      string `json:"network_id"`
 }
 
 // FirewallResult is the response from the Civo Firewall APIs
@@ -39,6 +39,7 @@ type FirewallRule struct {
 // FirewallRuleConfig is how you specify the details when creating a new rule
 type FirewallRuleConfig struct {
 	FirewallID string   `json:"firewall_id"`
+	Region     string   `json:"region"`
 	Protocol   string   `json:"protocol"`
 	StartPort  string   `json:"start_port"`
 	EndPort    string   `json:"end_port"`
@@ -47,15 +48,18 @@ type FirewallRuleConfig struct {
 	Label      string   `json:"label,omitempty"`
 }
 
-type firewallConfig struct {
-	Name string `json:"name"`
+// FirewallConfig is how you specify the details when creating a new firewall
+type FirewallConfig struct {
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	NetworkID string `json:"network_id"`
 }
 
 // ListFirewalls returns all firewall owned by the calling API account
 func (c *Client) ListFirewalls() ([]Firewall, error) {
 	resp, err := c.SendGetRequest("/v2/firewalls")
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	firewall := make([]Firewall, 0)
@@ -70,33 +74,42 @@ func (c *Client) ListFirewalls() ([]Firewall, error) {
 func (c *Client) FindFirewall(search string) (*Firewall, error) {
 	firewalls, err := c.ListFirewalls()
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
-	found := -1
+	exactMatch := false
+	partialMatchesCount := 0
+	result := Firewall{}
 
-	for i, firewall := range firewalls {
-		if strings.Contains(firewall.ID, search) || strings.Contains(firewall.Name, search) {
-			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+	for _, value := range firewalls {
+		if value.Name == search || value.ID == search {
+			exactMatch = true
+			result = value
+		} else if strings.Contains(value.Name, search) || strings.Contains(value.ID, search) {
+			if exactMatch == false {
+				result = value
+				partialMatchesCount++
 			}
-			found = i
 		}
 	}
 
-	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+	if exactMatch || partialMatchesCount == 1 {
+		return &result, nil
+	} else if partialMatchesCount > 1 {
+		err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+		return nil, MultipleMatchesError.wrap(err)
+	} else {
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
-
-	return &firewalls[found], nil
 }
 
 // NewFirewall creates a new firewall record
-func (c *Client) NewFirewall(name string) (*FirewallResult, error) {
-	fw := firewallConfig{Name: name}
+func (c *Client) NewFirewall(name, networkid string) (*FirewallResult, error) {
+	fw := FirewallConfig{Name: name, Region: c.Region, NetworkID: networkid}
 	body, err := c.SendPostRequest("/v2/firewalls", fw)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	result := &FirewallResult{}
@@ -108,12 +121,11 @@ func (c *Client) NewFirewall(name string) (*FirewallResult, error) {
 }
 
 // RenameFirewall rename firewall
-func (c *Client) RenameFirewall(id string, name string) (*SimpleResponse, error) {
-	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/firewalls/%s", id), map[string]string{
-		"name": name,
-	})
+func (c *Client) RenameFirewall(id string, f *FirewallConfig) (*SimpleResponse, error) {
+	f.Region = c.Region
+	resp, err := c.SendPutRequest(fmt.Sprintf("/v2/firewalls/%s", id), f)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)
@@ -123,7 +135,7 @@ func (c *Client) RenameFirewall(id string, name string) (*SimpleResponse, error)
 func (c *Client) DeleteFirewall(id string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest("/v2/firewalls/" + id)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)
@@ -132,12 +144,15 @@ func (c *Client) DeleteFirewall(id string) (*SimpleResponse, error) {
 // NewFirewallRule creates a new rule within a firewall
 func (c *Client) NewFirewallRule(r *FirewallRuleConfig) (*FirewallRule, error) {
 	if len(r.FirewallID) == 0 {
-		return nil, fmt.Errorf("the firewall ID is empty")
+		err := fmt.Errorf("the firewall ID is empty")
+		return nil, IDisEmptyError.wrap(err)
 	}
+
+	r.Region = c.Region
 
 	resp, err := c.SendPostRequest(fmt.Sprintf("/v2/firewalls/%s/rules", r.FirewallID), r)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	rule := &FirewallRule{}
@@ -152,7 +167,7 @@ func (c *Client) NewFirewallRule(r *FirewallRuleConfig) (*FirewallRule, error) {
 func (c *Client) ListFirewallRules(id string) ([]FirewallRule, error) {
 	resp, err := c.SendGetRequest(fmt.Sprintf("/v2/firewalls/%s/rules", id))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	firewallRule := make([]FirewallRule, 0)
@@ -167,7 +182,7 @@ func (c *Client) ListFirewallRules(id string) ([]FirewallRule, error) {
 func (c *Client) FindFirewallRule(firewallID string, search string) (*FirewallRule, error) {
 	firewallsRules, err := c.ListFirewallRules(firewallID)
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	found := -1
@@ -175,14 +190,16 @@ func (c *Client) FindFirewallRule(firewallID string, search string) (*FirewallRu
 	for i, firewallRule := range firewallsRules {
 		if strings.Contains(firewallRule.ID, search) {
 			if found != -1 {
-				return nil, fmt.Errorf("unable to find %s because there were multiple matches", search)
+				err := fmt.Errorf("unable to find %s because there were multiple matches", search)
+				return nil, MultipleMatchesError.wrap(err)
 			}
 			found = i
 		}
 	}
 
 	if found == -1 {
-		return nil, fmt.Errorf("unable to find %s, zero matches", search)
+		err := fmt.Errorf("unable to find %s, zero matches", search)
+		return nil, ZeroMatchesError.wrap(err)
 	}
 
 	return &firewallsRules[found], nil
@@ -192,7 +209,7 @@ func (c *Client) FindFirewallRule(firewallID string, search string) (*FirewallRu
 func (c *Client) DeleteFirewallRule(id string, ruleID string) (*SimpleResponse, error) {
 	resp, err := c.SendDeleteRequest(fmt.Sprintf("/v2/firewalls/%s/rules/%s", id, ruleID))
 	if err != nil {
-		return nil, err
+		return nil, decodeERROR(err)
 	}
 
 	return c.DecodeSimpleResponse(resp)
